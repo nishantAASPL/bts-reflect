@@ -1,48 +1,38 @@
 /**
- * BTS ReflectAI — Ollama API Layer
+ * BTS ReflectAI — OpenAI API Layer
  */
 
-const BASE_URL = 'http://ml01.alignedautomation.com:11434/api/generate';
-const MODEL = 'gpt-oss';
+import OpenAI from "openai";
+
+const endpoint = import.meta.env.VITE_AZURE_OPENAI_ENDPOINT;
+const deploymentName = import.meta.env.VITE_AZURE_OPENAI_DEPLOYMENT_NAME;
+const apiKey = import.meta.env.VITE_AZURE_OPENAI_API_KEY;
+
+const openai = new OpenAI({
+  baseURL: endpoint,
+  apiKey: apiKey,
+  dangerouslyAllowBrowser: true
+});
 
 /**
  * Stream a response token-by-token.
  */
 export async function streamResponse(prompt, onToken, signal) {
-  const res = await fetch(BASE_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, prompt, stream: true }),
-    signal,
-  });
+  const runner = await openai.chat.completions.create(
+    {
+      messages: [{ role: "user", content: prompt }],
+      model: deploymentName,
+      stream: true,
+    },
+    { signal }
+  );
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`API ${res.status}: ${text || res.statusText}`);
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
   let full = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n').filter((l) => l.trim());
-
-    for (const line of lines) {
-      try {
-        const data = JSON.parse(line);
-        if (data.response) {
-          full += data.response;
-          onToken(data.response);
-        }
-        if (data.done) return full;
-      } catch {
-        /* partial JSON line — skip */
-      }
+  for await (const chunk of runner) {
+    const delta = chunk.choices[0]?.delta?.content || "";
+    full += delta;
+    if (delta) {
+      onToken(delta);
     }
   }
 
@@ -53,18 +43,13 @@ export async function streamResponse(prompt, onToken, signal) {
  * Generate a complete response (non-streaming).
  */
 export async function generateResponse(prompt, signal) {
-  const res = await fetch(BASE_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, prompt, stream: false }),
-    signal,
-  });
+  const completion = await openai.chat.completions.create(
+    {
+      messages: [{ role: "user", content: prompt }],
+      model: deploymentName,
+    },
+    { signal }
+  );
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`API ${res.status}: ${text || res.statusText}`);
-  }
-
-  const data = await res.json();
-  return data.response || '';
+  return completion.choices[0]?.message?.content || "";
 }

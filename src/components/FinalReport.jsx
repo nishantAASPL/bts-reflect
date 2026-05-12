@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { marked } from 'marked';
-import html2pdf from 'html2pdf.js';
+import html2pdf from 'html2pdf.js/dist/html2pdf.bundle.min.js';
 import { useReflection } from '../store';
 
 marked.setOptions({ gfm: true, breaks: true });
